@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability.json",
+  "identifier": "default",
+  "description": "TypeFlow default capabilities",
+  "windows": ["card", "viewer", "onboarding"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-is-visible",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-start-dragging",
+    "fs:allow-write-text-file",
+    "fs:scope-download-recursive",
+    "fs:scope-home-recursive",
+    "fs:allow-download-write",
+    "core:event:allow-emit",
+    "core:event:default",
+    "shell:default",
+    "dialog:default",
+    "dialog:allow-save",
+    "core:window:allow-start-dragging",
+    "fs:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
+  ]
+}
