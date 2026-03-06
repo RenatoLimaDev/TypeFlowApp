@@ -44,10 +44,16 @@ fn windows_hook(handle: AppHandle) {
             let vk = VIRTUAL_KEY(kb.vkCode as u16);
             let is_keydown = wparam.0 == WM_KEYDOWN as usize
                 || wparam.0 == WM_SYSKEYDOWN as usize;
+            let is_keyup = wparam.0 == WM_KEYUP as usize
+                || wparam.0 == WM_SYSKEYUP as usize;
+
+            // Bloqueia Space no keyup também — players como YouTube pausam no keyup
+            if is_keyup && vk == VK_SPACE {
+                return LRESULT(1);
+            }
 
             if is_keydown {
                 let ctrl = (GetKeyState(VK_CONTROL.0 as i32) & 0x8000u16 as i16) != 0;
-                let shift = (GetKeyState(VK_SHIFT.0 as i32) & 0x8000u16 as i16) != 0;
                 let alt = (GetKeyState(VK_MENU.0 as i32) & 0x8000u16 as i16) != 0;
 
                 // Deixa Ctrl+Alt+* passar — são atalhos globais do app
@@ -61,18 +67,40 @@ fn windows_hook(handle: AppHandle) {
                     VK_RETURN => Some(KeyEvent { kind: "enter".into(), char: None }),
                     VK_BACK => Some(KeyEvent { kind: "backspace".into(), char: None }),
                     VK_Z if ctrl => Some(KeyEvent { kind: "ctrl_z".into(), char: None }),
+                    // Space tratado explicitamente para não vazar para apps de fundo
+                    VK_SPACE => Some(KeyEvent { kind: "char".into(), char: Some(" ".into()) }),
                     _ if ctrl => None,
                     _ => {
-                        let scan = MapVirtualKeyW(kb.vkCode, MAPVK_VK_TO_CHAR);
-                        if scan > 0 {
-                            if let Some(mut c) = char::from_u32(scan) {
-                                if !shift {
-                                    if let Some(lower) = c.to_lowercase().next() {
-                                        c = lower;
-                                    }
-                                }
-                                if c >= ' ' {
-                                    Some(KeyEvent { kind: "char".into(), char: Some(c.to_string()) })
+                        // ToUnicodeEx respeita o estado atual do Shift, CapsLock, AltGr, etc.
+                        // Diferente de MapVirtualKeyW que ignora modificadores.
+                        let keyboard_state = {
+                            let mut state = [0u8; 256];
+                            GetKeyboardState(&mut state);
+                            state
+                        };
+
+                        let layout = GetKeyboardLayout(0);
+                        let mut buf = [0u16; 4];
+
+                        let result = ToUnicodeEx(
+                            kb.vkCode,
+                            kb.scanCode,
+                            &keyboard_state,
+                            &mut buf,
+                            0,
+                            layout,
+                        );
+
+                        if result > 0 {
+                            // result é o número de caracteres escritos em buf
+                            if let Ok(s) = String::from_utf16(&buf[..result as usize]) {
+                                // Filtra caracteres de controle (< 0x20), exceto space já tratado acima
+                                let filtered: String = s
+                                    .chars()
+                                    .filter(|c| *c >= ' ')
+                                    .collect();
+                                if !filtered.is_empty() {
+                                    Some(KeyEvent { kind: "char".into(), char: Some(filtered) })
                                 } else {
                                     None
                                 }
@@ -80,6 +108,7 @@ fn windows_hook(handle: AppHandle) {
                                 None
                             }
                         } else {
+                            // result == 0: sem tradução; result < 0: caractere morto (dead key)
                             None
                         }
                     }
