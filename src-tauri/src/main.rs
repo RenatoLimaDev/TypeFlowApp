@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use tauri::Emitter;
 
 mod windows;
 mod tray;
@@ -17,9 +18,13 @@ fn main() {
             windows::setup(app)?;
             tray::setup(app)?;
             shortcuts::setup(app)?;
-            // Inicia captura global de teclado
             keyboard::start(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let _ = window.emit("keyboard-capture-stop", ());
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running TypeFlow");

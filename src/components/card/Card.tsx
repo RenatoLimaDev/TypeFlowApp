@@ -88,14 +88,38 @@ export function Card({ onFinish, onOpenViewer }: CardProps) {
     passthroughRef.current = next;
     setPassthrough(next);
     await getCurrentWindow().setIgnoreCursorEvents(next).catch(() => {});
+
+    const { emit } = await import("@tauri-apps/api/event");
+  if (next) {
+    await emit("keyboard-capture-stop");
+  } else {
+    await emit("keyboard-capture-start");
+  }
+
   }, []);
 
+    const toggleSound = useCallback(() => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    sounds.toggle(next);
+  }, [soundOn]);
+
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen("toggle-click-through", () => togglePassthrough())
-      .then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, [togglePassthrough]);
+  let unlistenClick: (() => void) | null = null;
+  let unlistenSound: (() => void) | null = null;
+
+  listen("toggle-click-through", () => togglePassthrough())
+    .then((fn) => { unlistenClick = fn; });
+
+  listen("toggle-sound", () => toggleSound())
+    .then((fn) => { unlistenSound = fn; });
+
+  return () => {
+    unlistenClick?.();
+    unlistenSound?.();
+  };
+}, [togglePassthrough, toggleSound]);
 
   // Reasserta WS_EX_NOACTIVATE a cada clique — impede barra de tarefas
   useEffect(() => {
@@ -106,12 +130,6 @@ export function Card({ onFinish, onOpenViewer }: CardProps) {
     return () => window.removeEventListener("mousedown", handler, true);
   }, []);
 
-  const toggleSound = useCallback(() => {
-    const next = !soundOn;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    sounds.toggle(next);
-  }, [soundOn]);
 
   const handleOpenViewer = useCallback(async () => {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
