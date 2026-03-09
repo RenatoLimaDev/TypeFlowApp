@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 const SHORTCUTS = [
-  { key: "Ctrl + Alt + N", desc: "show / hide" },
   { key: "Ctrl + Alt + S", desc: "sound on / off" },
   { key: "Ctrl + Alt + V", desc: "view sessions" },
   { key: "Ctrl + Alt + C", desc: "click-through" },
