@@ -15,7 +15,6 @@
 
 
 TypeFlow é um overlay minimalista que fica sobre todas as janelas, permitindo capturar pensamentos e notas sem interromper o fluxo de trabalho. Bundle < 5MB.
-<div align="center">
 ## Stack
 
 | Camada | Tecnologia |
@@ -26,7 +25,6 @@ TypeFlow é um overlay minimalista que fica sobre todas as janelas, permitindo c
 | Styling | Tailwind CSS v3 |
 | Estado | Zustand + Immer |
 | Backend | Rust |
-</div>
 
 ## Estrutura
 
@@ -72,7 +70,6 @@ npm run tauri:build
 ```
 
 Gera o executável em `src-tauri/target/release/bundle/`.
-<div align="center">
 ## Atalhos
 
 | Atalho | Ação |
@@ -84,4 +81,3 @@ Gera o executável em `src-tauri/target/release/bundle/`.
 | `Ctrl + Enter` | Finalizar sessão |
 | `Ctrl + Z` | Desfazer |
 | `Esc` | Voltar / fechar |
-</div>
