@@ -12,10 +12,10 @@
 </div>
 
 ---
-<div align="center">
+
 
 TypeFlow é um overlay minimalista que fica sobre todas as janelas, permitindo capturar pensamentos e notas sem interromper o fluxo de trabalho. Bundle < 5MB.
-
+<div align="center">
 ## Stack
 
 | Camada | Tecnologia |
