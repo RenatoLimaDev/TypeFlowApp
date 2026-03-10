@@ -84,4 +84,4 @@ Gera o executável em `src-tauri/target/release/bundle/`.
 | `Ctrl + Enter` | Finalizar sessão |
 | `Ctrl + Z` | Desfazer |
 | `Esc` | Voltar / fechar |
-</div>s
+</div>
