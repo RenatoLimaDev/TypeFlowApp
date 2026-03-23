@@ -1,6 +1,6 @@
-import { useState } from "react";
 import type { Session } from "@/types";
-import { sessionSize, highlightText } from "@/lib/utils";
+import { highlightText } from "@/lib/utils";
+import { Trash2 } from "lucide-react";
 
 interface SessionListProps {
   sessions: Session[];
@@ -11,85 +11,61 @@ interface SessionListProps {
 }
 
 export function SessionList({ sessions, searchQuery, selectedRow, onOpen, onDelete }: SessionListProps) {
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-
   const q = searchQuery.trim().toLowerCase();
-  const filtered = [...sessions]
-    .reverse()
-    .filter(
-      (s) =>
-        !q ||
-        s.title.toLowerCase().includes(q) ||
-        s.lines.some((l) => l.content.toLowerCase().includes(q))
-    );
+  const filtered = [...sessions].reverse().filter(s =>
+    !q ||
+    s.title.toLowerCase().includes(q) ||
+    s.lines.some(l => l.content.toLowerCase().includes(q))
+  );
 
   if (filtered.length === 0) {
     return (
-      // Fix: text visible (white/40 instead of invisible)
-      <div className="font-mono text-[11px] text-white/40 text-center py-9 tracking-wider">
-        {q ? `nothing matched "${q}"` : "no sessions yet — finish one to see it here"}
+      <div className="flex items-center justify-center flex-1 py-8">
+        <span className="font-mono text-[9px] tracking-wider" style={{ color: "rgba(255,255,255,0.18)" }}>
+          {q ? `no match for "${q}"` : "no sessions yet"}
+        </span>
       </div>
     );
   }
 
   return (
-    <div>
+    <div className="overflow-y-auto flex-1">
       {filtered.map((s, i) => {
         const realIndex = sessions.indexOf(s);
-        const match = q ? s.lines.find((l) => l.content.toLowerCase().includes(q)) : null;
+        const match = q ? s.lines.find(l => l.content.toLowerCase().includes(q)) : null;
         const isSelected = i === selectedRow;
 
         return (
           <div
             key={s.id}
-            className={`
-              flex items-center justify-between gap-2.5 px-1 py-2.5
-              border-b border-white/[0.04] last:border-b-0
-              rounded cursor-pointer transition-all animate-fadeIn
-              ${isSelected ? "bg-accent/8 outline outline-1 outline-accent/20" : "hover:bg-white/[0.04]"}
-            `}
-            style={{ animationDelay: `${i * 22}ms` }}
+            className="flex items-center px-4 cursor-default group"
+            style={{
+              height: 48,
+              borderBottom: "1px solid rgba(255,255,255,0.03)",
+              background: isSelected ? "rgba(255,255,255,0.03)" : "transparent",
+              transition: "background 0.1s ease",
+            }}
             onClick={() => onOpen(realIndex)}
           >
-            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-              {/* Fix: title always accent color, highlighted when searched */}
-              <div
-                className="font-mono text-[12px] tracking-[0.02em] text-accent"
+            <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+              <span
+                className="font-mono text-[11px] truncate leading-none"
+                style={{ color: "rgba(255,255,255,0.70)" }}
                 dangerouslySetInnerHTML={{ __html: highlightText(s.title, q) }}
               />
-              {/* Fix: subtitle/date visible in white/50, dash white/50 */}
-              <div className="font-mono text-[9px] text-white/50 tracking-[0.04em] whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
-                {match ? (
-                  <>
-                    {/* Fix: dash visible */}
-                    <span className="text-white/50">—</span>
-                    <span dangerouslySetInnerHTML={{ __html: highlightText(match.content, q) }} />
-                  </>
-                ) : (
-                  `${sessionSize(s.lines)}  ·  ${s.date}`
-                )}
-              </div>
+              <span className="font-mono text-[9px] leading-snug" style={{ color: "rgba(255,255,255,0.24)", hyphens: "auto", overflowWrap: "break-word" }} lang="pt-BR">
+                {match
+                  ? <span dangerouslySetInnerHTML={{ __html: highlightText(match.content, q) }} />
+                  : <>{s.date} · {s.lines.length} lines</>
+                }
+              </span>
             </div>
 
-            {/* Fix: X button visible */}
             <button
-              className={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-px rounded border transition-all flex-shrink-0 ${
-                confirmId === s.id
-                  ? "text-red-400 border-red-400/55 bg-red-400/10"
-                  : "text-white/40 border-white/20 hover:text-red-400 hover:border-red-400/38"
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirmId === s.id) {
-                  onDelete(s.id);
-                  setConfirmId(null);
-                } else {
-                  setConfirmId(s.id);
-                  setTimeout(() => setConfirmId((id) => (id === s.id ? null : id)), 2000);
-                }
-              }}
+              className="flex-shrink-0 ml-3 opacity-0 group-hover:opacity-100 transition-opacity text-white/22 hover:text-red-400/70"
+              onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
             >
-              {confirmId === s.id ? "delete?" : "✕"}
+              <Trash2 size={12} />
             </button>
           </div>
         );

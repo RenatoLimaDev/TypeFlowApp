@@ -15,7 +15,7 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
         move |_app, shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 match shortcut.key {
-                    Code::KeyV => toggle_window(&handle, "viewer"),
+                    Code::KeyV => { let _ = handle.emit("toggle-viewer", ()); },
                     Code::KeyS => { let _ = handle.emit("toggle-sound", ()); }
                     Code::KeyC => { let _ = handle.emit("toggle-click-through", ()); }
                     _ => {}

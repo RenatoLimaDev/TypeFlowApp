@@ -63,7 +63,6 @@ Gera `src-tauri/target/release/bundle/` com o executável.
 
 | Atalho | Ação |
 |--------|------|
-| `Ctrl + Alt + N` | Mostrar / esconder |
 | `Ctrl + Alt + V` | Abrir / fechar sessions |
 | `Ctrl + Alt + S` | Som on / off |
 | `Ctrl + Alt + C` | Click-through |

@@ -3,11 +3,11 @@ let rulerEl: HTMLSpanElement | null = null;
 function getRuler(): HTMLSpanElement {
   if (!rulerEl) {
     rulerEl = document.createElement("span");
+    rulerEl.className = "font-mono"; // mesma fonte do pill
     rulerEl.style.cssText =
-      "position:fixed;top:-9999px;left:-9999px;visibility:hidden;" +
-      "pointer-events:none;white-space:pre;" +
-      'font-family:"JetBrains Mono","Fira Code","Cascadia Code","Courier New",monospace;' +
-      "font-size:13.5px;letter-spacing:0.01em";
+      "position:fixed;top:-9999px;left:-9999px;" +
+      "visibility:hidden;pointer-events:none;" +
+      "white-space:pre;font-size:15px;letter-spacing:0.01em;";
     document.body.appendChild(rulerEl);
   }
   return rulerEl;
