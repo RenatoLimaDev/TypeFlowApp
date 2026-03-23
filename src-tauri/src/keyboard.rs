@@ -34,6 +34,8 @@ fn windows_hook(handle: AppHandle) {
 
     thread_local! {
         static APP_HANDLE: RefCell<Option<AppHandle>> = RefCell::new(None);
+        // Armazena o caractere da dead key pendente (ex: ´, ^, ~, `)
+        static PENDING_DEAD: RefCell<Option<u16>> = RefCell::new(None);
     }
 
     APP_HANDLE.with(|h| *h.borrow_mut() = Some(handle));
@@ -67,12 +69,26 @@ fn windows_hook(handle: AppHandle) {
                     VK_RETURN => Some(KeyEvent { kind: "enter".into(), char: None }),
                     VK_BACK => Some(KeyEvent { kind: "backspace".into(), char: None }),
                     VK_Z if ctrl => Some(KeyEvent { kind: "ctrl_z".into(), char: None }),
-                    // Space tratado explicitamente para não vazar para apps de fundo
-                    VK_SPACE => Some(KeyEvent { kind: "char".into(), char: Some(" ".into()) }),
+                    // Space: tratado explicitamente.
+                    // Dead key pendente + space = emite a dead key sozinha (ex: ´ + space = ´)
+                    VK_SPACE => {
+                        let dead = PENDING_DEAD.with(|pd| {
+                            let val = pd.borrow().clone();
+                            *pd.borrow_mut() = None;
+                            val
+                        });
+                        if let Some(dead_u16) = dead {
+                            // ´ + space = emite o acento sozinho
+                            let s = char::from_u32(dead_u16 as u32)
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".into());
+                            Some(KeyEvent { kind: "char".into(), char: Some(s) })
+                        } else {
+                            Some(KeyEvent { kind: "char".into(), char: Some(" ".into()) })
+                        }
+                    }
                     _ if ctrl => None,
                     _ => {
-                        // ToUnicodeEx respeita o estado atual do Shift, CapsLock, AltGr, etc.
-                        // Diferente de MapVirtualKeyW que ignora modificadores.
                         let keyboard_state = {
                             let mut state = [0u8; 256];
                             GetKeyboardState(&mut state);
@@ -91,25 +107,67 @@ fn windows_hook(handle: AppHandle) {
                             layout,
                         );
 
-                        if result > 0 {
-                            // result é o número de caracteres escritos em buf
+                        if result < 0 {
+                            // Dead key (´, ^, ~, `, "): ToUnicodeEx sujou o buffer interno
+                            // do Windows. Limpa chamando novamente com mesma tecla.
+                            let mut discard = [0u16; 4];
+                            ToUnicodeEx(kb.vkCode, kb.scanCode, &keyboard_state, &mut discard, 0, layout);
+
+                            // Salva o caractere da dead key para compor com a próxima tecla
+                            if let Some(dead_char) = char::from_u32(buf[0] as u32) {
+                                PENDING_DEAD.with(|pd| *pd.borrow_mut() = Some(dead_char as u16));
+                            }
+                            None // aguarda próxima tecla
+                        } else if result > 0 {
                             if let Ok(s) = String::from_utf16(&buf[..result as usize]) {
-                                // Filtra caracteres de controle (< 0x20), exceto space já tratado acima
-                                let filtered: String = s
-                                    .chars()
-                                    .filter(|c| *c >= ' ')
-                                    .collect();
-                                if !filtered.is_empty() {
-                                    Some(KeyEvent { kind: "char".into(), char: Some(filtered) })
-                                } else {
-                                    None
+                                let filtered: String = s.chars().filter(|c| *c >= ' ').collect();
+                                if filtered.is_empty() {
+                                    return CallNextHookEx(None, code, wparam, lparam);
                                 }
+
+                                // Verifica se havia dead key pendente
+                                let composed = PENDING_DEAD.with(|pd| {
+                                    let pending = pd.borrow().clone();
+                                    if let Some(dead_u16) = pending {
+                                        *pd.borrow_mut() = None;
+                                        // ToUnicodeEx já fez a composição internamente.
+                                        // Se retornou 2 chars: sem composição (ex: ´ + b).
+                                        // Emite dead key + char separados.
+                                        if filtered.chars().count() == 2 {
+                                            let dead_str = char::from_u32(dead_u16 as u32)
+                                                .map(|c| c.to_string())
+                                                .unwrap_or_default();
+                                            let base = filtered.chars().last()
+                                                .map(|c| c.to_string())
+                                                .unwrap_or_default();
+                                            Some(dead_str + &base)
+                                        } else {
+                                            // Composição feita: retorna caractere composto (ex: á, ê, ã)
+                                            Some(filtered)
+                                        }
+                                    } else {
+                                        Some(filtered)
+                                    }
+                                });
+
+                                composed.map(|c| KeyEvent { kind: "char".into(), char: Some(c) })
                             } else {
                                 None
                             }
                         } else {
-                            // result == 0: sem tradução; result < 0: caractere morto (dead key)
-                            None
+                            // result == 0: tecla sem tradução.
+                            // Se havia dead key pendente, emite ela sozinha.
+                            PENDING_DEAD.with(|pd| {
+                                let pending = pd.borrow().clone();
+                                if let Some(dead_u16) = pending {
+                                    *pd.borrow_mut() = None;
+                                    char::from_u32(dead_u16 as u32).map(|c| {
+                                        KeyEvent { kind: "char".into(), char: Some(c.to_string()) }
+                                    })
+                                } else {
+                                    None
+                                }
+                            })
                         }
                     }
                 };

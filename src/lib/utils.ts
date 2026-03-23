@@ -16,8 +16,14 @@ export function groupByTopic(lines: NoteLine[]): TopicGroup[] {
 
   for (const line of lines) {
     const tags = extractTags(line.content);
-    if (tags.length > 0) {
-      current = { tag: tags[0], lines: [line] };
+    const tag = tags.length > 0 ? tags[0] : null;
+
+    if (tag && current?.tag === tag) {
+      // Same tag as current group — keep grouping
+      current.lines.push(line);
+    } else if (tag) {
+      // New tag — new group
+      current = { tag, lines: [line] };
       groups.push(current);
     } else if (current) {
       current.lines.push(line);

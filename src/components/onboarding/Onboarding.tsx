@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
 
-const SHORTCUTS = [
-  { key: "Ctrl + Alt + N", desc: "show / hide" },
-  { key: "Ctrl + Alt + S", desc: "sound on / off" },
-  { key: "Ctrl + Alt + V", desc: "view sessions" },
-  { key: "Ctrl + Alt + C", desc: "click-through" },
-  { key: "Enter",          desc: "next line" },
-  { key: "Ctrl + Enter",   desc: "finish session" },
-  { key: "Esc",            desc: "close / back" },
-  { key: "Ctrl + Z",       desc: "undo" },
+const HINTS = [
+  { key: "enter",      desc: "next line"    },
+  { key: "ctrl+enter", desc: "save session" },
+  { key: "ctrl+alt+v", desc: "sessions"     },
 ];
 
 interface OnboardingProps {
@@ -21,44 +16,42 @@ export function Onboarding({ onDismiss }: OnboardingProps) {
   const dismiss = () => {
     if (hiding) return;
     setHiding(true);
-    setTimeout(onDismiss, 240);
+    setTimeout(onDismiss, 180);
   };
 
   useEffect(() => {
-    const handler = () => dismiss();
-    document.addEventListener("keydown", handler, { once: true });
-    document.addEventListener("mousedown", handler, { once: true });
+    document.addEventListener("keydown", dismiss, { once: true });
+    document.addEventListener("mousedown", dismiss, { once: true });
     return () => {
-      document.removeEventListener("keydown", handler);
-      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", dismiss);
+      document.removeEventListener("mousedown", dismiss);
     };
   }, []);
 
   return (
     <div
-      className={`
-        font-mono bg-[rgba(10,11,16,0.98)] border border-accent/20 rounded-xl
-        px-5 py-4 min-w-[280px]
-        transition-all duration-[240ms]
-        ${hiding ? "opacity-0 -translate-y-2 scale-[0.97]" : "opacity-100 translate-y-0 scale-100 animate-cardIn"}
-      `}
+      className={`transition-all duration-180 ${hiding ? "opacity-0 translate-y-1" : "opacity-100 translate-y-0 animate-fadeIn"}`}
+      style={{
+        background: "rgba(13,13,19,0.96)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 12,
+        padding: "10px 16px",
+        boxShadow: "0 4px 18px rgba(0,0,0,0.45)",
+      }}
     >
-      <div className="text-[8.5px] tracking-[0.22em] uppercase text-accent/85 mb-3">
-        typeflow
-      </div>
-
-      {SHORTCUTS.map(({ key, desc }) => (
-        <div key={key} className="flex items-center gap-2.5 py-1 border-b border-white/[0.04] last:border-b-0">
-          <span className="font-mono text-[8px] text-white/50 bg-white/[0.06] border border-white/10 rounded px-1.5 py-[2px] whitespace-nowrap min-w-[112px] text-center">
+      {HINTS.map(({ key, desc }) => (
+        <div key={key} className="flex items-center gap-3 py-[4px]">
+          <span
+            className="font-mono text-[9px] text-right flex-shrink-0"
+            style={{ color: "rgba(255,255,255,0.30)", width: 76 }}
+          >
             {key}
           </span>
-          <span className="text-[9.5px] text-white/30">{desc}</span>
+          <span className="font-mono text-[9px]" style={{ color: "rgba(255,255,255,0.14)" }}>
+            {desc}
+          </span>
         </div>
       ))}
-
-      <div className="text-[8px] text-accent/85 mb-3 tracking-widest text-center mt-3 animate-[pulse_2.2s_ease-in-out_infinite]">
-        type anything to dismiss
-      </div>
     </div>
   );
 }

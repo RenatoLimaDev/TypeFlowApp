@@ -22,6 +22,7 @@ src-tauri/WixTools/
 *.ntvs*
 *.njsproj
 *.sln
+.claude
 
 # OS
 .DS_Store

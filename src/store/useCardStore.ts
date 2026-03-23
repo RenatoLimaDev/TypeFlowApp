@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type { CardMode, NoteLine } from "@/types";
-import { wrapText } from "@/lib/ruler";
+import { wrapText, measureText } from "@/lib/ruler";
 import { sounds } from "@/lib/sound";
 
 interface CardStore {
@@ -19,6 +19,7 @@ interface CardStore {
   noteHistory: string[];
 
   appendChar: (char: string, cardWidth: number) => void;
+  pasteText: (text: string, cardWidth: number) => void;
   backspace: (cardWidth: number) => void;
   commitTitle: () => void;
   advanceNote: (cardWidth: number) => void;
@@ -47,30 +48,90 @@ export const useCardStore = create<CardStore>()(
     ...initialState,
 
     appendChar(char, cardWidth) {
-      const maxW = cardWidth - 80;
       set((s) => {
         if (s.mode === "title") {
+          if (s.titleText.length >= 72) return;
           s.titleHistory.push(s.titleText);
           s.titleText += char;
         } else {
-          s.noteHistory.push(s.noteText);
-          s.noteText += char;
-          const lines = wrapText(s.noteText, maxW);
-          const wc = lines.length;
-          if (wc > s.prevWrapCount) {
-            s.lineCounter += wc - s.prevWrapCount;
-            s.prevGhost = lines[wc - 2] ?? "";
-            s.prevGhostTag = `~${s.lineCounter}`;
+          const test = s.noteText + char;
+          if (wrapText(test, cardWidth).length > 1) {
+            // Auto-advance: commit current line, start new with the typed char
+            if (s.noteText.trim()) {
+              s.lineCounter++;
+              s.allLines.push({ content: s.noteText.trim() });
+              s.prevGhost = s.noteText;
+              s.prevGhostTag = `~${s.lineCounter}`;
+            }
+            // Carry the leading #tag prefix to the new line
+            const tagPrefix = s.noteText.match(/^(#\w+\s+)/)?.[1] ?? "";
+            s.noteText = tagPrefix + char;
+            s.noteHistory = [];
+            s.prevWrapCount = 1;
+            s.lastWrapped = char;
+          } else {
+            s.noteHistory.push(s.noteText);
+            s.noteText = test;
+            s.prevWrapCount = 1;
+            s.lastWrapped = test;
           }
-          s.prevWrapCount = wc;
-          s.lastWrapped = lines[wc - 1] ?? "";
         }
       });
       sounds.key();
     },
 
-    backspace(cardWidth) {
-      const maxW = cardWidth - 80;
+    pasteText(text, cardWidth) {
+      set((s) => {
+        if (s.mode === "title") {
+          s.titleHistory.push(s.titleText);
+          s.titleText = (s.titleText + text).slice(0, 72);
+          return;
+        }
+
+        // Split combined text into tagged sections.
+        // "#tag content more content #tag2 other" →
+        // [{tag: null, content: "..."}, {tag: "tag", content: "..."}, ...]
+        const raw = s.noteText + text;
+        const parts = raw.split(/(#\w+)/);
+        const segments: Array<{ tag: string | null; content: string }> = [];
+        if (parts[0]) segments.push({ tag: null, content: parts[0] });
+        for (let i = 1; i < parts.length; i += 2) {
+          const tag = parts[i].slice(1).toLowerCase();
+          const content = (parts[i + 1] ?? "").replace(/^\s+/, "");
+          segments.push({ tag, content });
+        }
+
+        for (let si = 0; si < segments.length; si++) {
+          const { tag, content } = segments[si];
+          const prefix = tag ? `#${tag} ` : "";
+          // Wrap the content for this section with its available width
+          const availW = tag ? Math.max(cardWidth - measureText(prefix), cardWidth * 0.5) : cardWidth;
+          const wrappedLines = wrapText(content, availW);
+          const isLastSeg = si === segments.length - 1;
+
+          const linesToCommit = isLastSeg ? wrappedLines.slice(0, -1) : wrappedLines;
+          for (const chunk of linesToCommit) {
+            const c = chunk.trim();
+            if (!c) continue;
+            s.lineCounter++;
+            s.allLines.push({ content: prefix + c });
+            s.prevGhost = prefix + c;
+            s.prevGhostTag = `~${s.lineCounter}`;
+          }
+
+          if (isLastSeg) {
+            s.noteText = prefix + (wrappedLines[wrappedLines.length - 1] ?? "");
+          }
+        }
+
+        s.noteHistory = [];
+        s.lastWrapped = s.noteText;
+        s.prevWrapCount = 1;
+      });
+      sounds.key();
+    },
+
+    backspace(_cardWidth) {
       set((s) => {
         if (s.mode === "title") {
           if (!s.titleText.length) return;
@@ -80,15 +141,7 @@ export const useCardStore = create<CardStore>()(
           if (!s.noteText.length) return;
           s.noteHistory.push(s.noteText);
           s.noteText = s.noteText.slice(0, -1);
-          const lines = wrapText(s.noteText, maxW);
-          const wc = lines.length;
-          if (wc < s.prevWrapCount) {
-            s.lineCounter = Math.max(0, s.lineCounter - (s.prevWrapCount - wc));
-            s.prevGhost = lines[wc - 2] ?? s.prevGhost;
-            s.prevGhostTag = `~${s.lineCounter}`;
-          }
-          s.prevWrapCount = wc;
-          s.lastWrapped = lines[wc - 1] ?? "";
+          s.lastWrapped = s.noteText;
         }
       });
       sounds.backspace();
@@ -99,8 +152,8 @@ export const useCardStore = create<CardStore>()(
       if (!titleText.trim()) return;
       set((s) => {
         s.mode = "note";
-        s.prevGhost = s.titleText;
-        s.prevGhostTag = "title";
+        s.prevGhost = "";
+        s.prevGhostTag = "";
         s.prevWrapCount = 1;
         s.titleHistory = [];
         s.noteHistory = [];
@@ -108,8 +161,8 @@ export const useCardStore = create<CardStore>()(
       sounds.commit();
     },
 
-    advanceNote(cardWidth) {
-      const { noteText, lastWrapped, lineCounter, allLines } = get();
+    advanceNote(_cardWidth) {
+      const { noteText, lastWrapped } = get();
       const content = noteText.trim();
 
       // Fix: skip empty lines — pressing enter on blank does nothing
@@ -121,13 +174,16 @@ export const useCardStore = create<CardStore>()(
       set((s) => {
         // Fix: detect duplicate topic and append instead of creating new line
         // Extract topic tag from content (e.g. "text #topic" → topic = "topic")
-        const tagMatch = content.match(/#(\w+)$/);
+        const tagMatch = content.match(/^#(\w+)\s+/) ?? content.match(/#(\w+)$/);
         const tag = tagMatch ? tagMatch[1].toLowerCase() : null;
 
         if (tag) {
           // Find last line with same tag
           const lastIdx = [...s.allLines].map((l, i) => ({ l, i }))
-            .filter(({ l }) => l.content.toLowerCase().endsWith(`#${tag}`))
+            .filter(({ l }) => {
+              const c = l.content.toLowerCase();
+              return c.startsWith(`#${tag} `) || c.endsWith(`#${tag}`);
+            })
             .pop()?.i ?? -1;
 
           if (lastIdx !== -1) {
@@ -176,8 +232,7 @@ export const useCardStore = create<CardStore>()(
       };
     },
 
-    undo(cardWidth) {
-      const maxW = cardWidth - 80;
+    undo(_cardWidth) {
       set((s) => {
         if (s.mode === "title") {
           if (!s.titleHistory.length) return;
@@ -185,9 +240,7 @@ export const useCardStore = create<CardStore>()(
         } else {
           if (!s.noteHistory.length) return;
           s.noteText = s.noteHistory.pop()!;
-          const lines = wrapText(s.noteText, maxW);
-          s.prevWrapCount = lines.length;
-          s.lastWrapped = lines[lines.length - 1] ?? "";
+          s.lastWrapped = s.noteText;
         }
       });
       sounds.backspace();

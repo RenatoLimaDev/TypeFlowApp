@@ -47,3 +47,23 @@ pub fn reassert_noactivate(hwnd_val: isize) {
 
 #[cfg(not(target_os = "windows"))]
 pub fn reassert_noactivate(_hwnd_val: isize) {}
+
+#[cfg(target_os = "windows")]
+pub fn show_noactivate(hwnd_val: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    };
+    unsafe {
+        let hwnd = HWND(hwnd_val as *mut _);
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0, 0, 0, 0,
+            SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn show_noactivate(_hwnd_val: isize) {}

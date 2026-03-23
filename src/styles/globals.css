@@ -10,6 +10,7 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 /* Disable text selection on drag areas */
@@ -29,4 +30,21 @@ mark {
   background: rgba(125,211,252,0.22);
   border-radius: 2px;
   color: inherit;
+}
+
+/* Pill roll animations */
+@keyframes rollBack {
+  0%   { opacity: 1; transform: translateY(0px);   filter: blur(0px); }
+  100% { opacity: 0; transform: translateY(-14px); filter: blur(2px); }
+}
+@keyframes rollIn {
+  0%   { opacity: 0; transform: translateY(14px);  filter: blur(2px); }
+  70%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0px);   filter: blur(0px); }
+}
+.animate-rollBack {
+  animation: rollBack 0.24s ease-out forwards;
+}
+.animate-rollIn {
+  animation: rollIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

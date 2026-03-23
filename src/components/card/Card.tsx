@@ -5,105 +5,95 @@ import { useCardStore } from "@/store/useCardStore";
 import { useGhostInput } from "@/hooks/useGhostInput";
 import { wrapText } from "@/lib/ruler";
 import { isSoundEnabled, setSoundEnabled, sounds } from "@/lib/sound";
-import { CardLine } from "./CardLine";
 import { invoke } from "@tauri-apps/api/core";
+import { CircleCheck, CircleHelp, EyeClosed } from "lucide-react";
+import { getSessions } from "@/lib/storage";
 
-const PLACEHOLDERS = [
-  "what are you thinking?", "type here…", "keep going…",
-  "something clicked?", "write it down…", "don't lose this…", "quick thought?",
+const PILL_W = 560;
+const PILL_H = 52;
+const CARD_W_STORE = PILL_W - 48; // 24px margin each side
+
+const ONBOARD_STEPS = [
+  "welcome to typeflow",
+  "enter  —  new line",
+  "ctrl + enter  —  save session",
+  "ctrl + z  —  undo",
+  "ctrl + alt + v  —  sessions",
+  "ctrl + alt + s  —  sound on/off",
+  "ctrl + alt + c  —  click-through",
+  "esc  —  close / back",
 ];
+
+function isFirstRun() {
+  return !localStorage.getItem("tf-seen");
+}
 
 interface CardProps {
   onFinish: (title: string, lines: { content: string }[]) => void;
-  onOpenViewer: () => void;
 }
 
-export function Card({ onFinish, onOpenViewer }: CardProps) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [soundOn, setSoundOn] = useState(isSoundEnabled());
-  const [phIdx, setPhIdx] = useState(0);
-  const [flashVisible, setFlashVisible] = useState(false);
+export function Card({ onFinish }: CardProps) {
   const [passthrough, setPassthrough] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [soundOn, setSoundOn] = useState(isSoundEnabled());
+
+  // Inline onboarding: step index, -1 = done
+  const [onboard, setOnboard] = useState<number>(() => isFirstRun() ? 0 : -1);
+
+  // Roll animation state
+  const [rollPhase, setRollPhase] = useState<"idle" | "out" | "in">("idle");
+  const [outText, setOutText] = useState("");
+  const [phaseKey, setPhaseKey] = useState(0);
+
   const passthroughRef = useRef(false);
-  const onboardingHidden = useRef(false);
+  const viewerOpenRef = useRef(false);
+  const rollTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const store = useCardStore();
-  const { mode, titleText, noteText, prevGhost, prevGhostTag, sessionDone } = store;
+  const { mode, titleText, noteText, sessionDone } = store;
 
-  const cardWidth = cardRef.current?.getBoundingClientRect().width ?? 900;
-  const maxW = cardWidth - 80;
-  const wrappedNote = wrapText(noteText, maxW);
+  const wrappedNote = wrapText(noteText, PILL_W - 40);
   const activeNote = wrappedNote[wrappedNote.length - 1] ?? "";
-  const ghostLine = wrappedNote.length >= 2 ? wrappedNote[wrappedNote.length - 2] : prevGhost;
-  const ghostTag = prevGhostTag || (wrappedNote.length >= 2 ? `~${store.lineCounter}` : "");
+  const storeText = mode === "title" ? titleText : activeNote;
 
-  const hideOnboarding = useCallback(() => {
-    if (onboardingHidden.current) return;
-    onboardingHidden.current = true;
-    import("@tauri-apps/api/webviewWindow").then(({ WebviewWindow }) => {
-      WebviewWindow.getByLabel("onboarding").then((w) => w?.hide());
-    });
-  }, []);
-
-  const showFlash = useCallback(() => {
-    setFlashVisible(true);
-    setTimeout(() => setFlashVisible(false), 1200);
-  }, []);
+  // ── Helpers ─────────────────────────────────────────────────────────
 
   const handleFinish = useCallback(() => {
     const result = store.finishSession();
     if (!result) return;
-    setTimeout(() => {
-      store.reset();
-      onFinish(result.title, result.lines);
-    }, 1600);
+    setTimeout(() => { store.reset(); onFinish(result.title, result.lines); }, 1400);
   }, [store, onFinish]);
 
-  const { ghostRef, focus, handleKeyDown, handleInput, handlePaste } = useGhostInput({
-    disabled: sessionDone,
-    paused: passthrough,
-    onChar: (c) => {
-      hideOnboarding();
-      store.appendChar(c, cardWidth);
-    },
-    onBackspace: () => {
-      hideOnboarding();
-      store.backspace(cardWidth);
-    },
-    onEnter: () => {
-      hideOnboarding();
-      if (mode === "title") store.commitTitle();
-      else {
-        store.advanceNote(cardWidth);
-        showFlash();
-        setPhIdx((i) => (i + 1) % PLACEHOLDERS.length);
-      }
-    },
-    onCtrlEnter: () => { if (mode === "note") handleFinish(); },
-    onCtrlZ: () => store.undo(cardWidth),
-  });
+  const triggerRoll = useCallback((action: () => void, text: string) => {
+    rollTimers.current.forEach(clearTimeout);
+    setOutText(text);
+    setRollPhase("out");
+    setPhaseKey((k) => k + 1);
+    const t1 = setTimeout(() => {
+      action();
+      setRollPhase("in");
+      setPhaseKey((k) => k + 1);
+    }, 260);
+    const t2 = setTimeout(() => setRollPhase("idle"), 600);
+    rollTimers.current = [t1, t2];
+  }, []);
+
+  const skipOnboard = useCallback(() => {
+    localStorage.setItem("tf-seen", "1");
+    setOnboard(-1);
+    setRollPhase("idle");
+    rollTimers.current.forEach(clearTimeout);
+  }, []);
 
   const togglePassthrough = useCallback(async () => {
     const next = !passthroughRef.current;
     passthroughRef.current = next;
     setPassthrough(next);
     await getCurrentWindow().setIgnoreCursorEvents(next).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen("toggle-click-through", () => togglePassthrough())
-      .then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, [togglePassthrough]);
-
-  // Reasserta WS_EX_NOACTIVATE a cada clique — impede barra de tarefas
-  useEffect(() => {
-    const handler = () => {
-      invoke("reassert_noactivate").catch(() => {});
-    };
-    window.addEventListener("mousedown", handler, true);
-    return () => window.removeEventListener("mousedown", handler, true);
+    const { emit } = await import("@tauri-apps/api/event");
+    if (next) await emit("keyboard-capture-stop");
+    else await emit("keyboard-capture-start");
+    if (viewerOpenRef.current) invoke("set_viewer_passthrough", { on: next }).catch(() => {});
   }, []);
 
   const toggleSound = useCallback(() => {
@@ -115,145 +105,268 @@ export function Card({ onFinish, onOpenViewer }: CardProps) {
 
   const handleOpenViewer = useCallback(async () => {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const { PhysicalPosition, LogicalSize } = await import("@tauri-apps/api/dpi");
     const viewer = await WebviewWindow.getByLabel("viewer");
     if (!viewer) return;
+
     const visible = await viewer.isVisible();
-    if (visible) await viewer.hide();
-    else { await viewer.show(); await viewer.setFocus(); }
+    if (visible) {
+      await viewer.hide();
+      viewerOpenRef.current = false;
+      setViewerOpen(false);
+      // Retoma captura ao fechar via toggle (Ctrl+Alt+V)
+      if (!passthroughRef.current) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("keyboard-capture-start");
+      }
+    } else {
+      const cardWin = await WebviewWindow.getByLabel("card");
+      if (cardWin) {
+        const pos = await cardWin.outerPosition();
+        const scale = await cardWin.scaleFactor();
+        const count = getSessions().length;
+        const HEADER = 44, SEARCH = 36, ITEM = 48, MAX = 640;
+        const dynamicH = Math.min(HEADER + SEARCH + (count + 1) * ITEM, MAX);
+        await viewer.setSize(new LogicalSize(PILL_W, dynamicH));
+        await viewer.setPosition(new PhysicalPosition(
+          pos.x + Math.round(30 * scale),
+          pos.y + Math.round(22 * scale) - Math.round(dynamicH * scale),
+        ));
+      }
+      await invoke("show_viewer_noactivate");
+      viewerOpenRef.current = true;
+      setViewerOpen(true);
+      // Para captura para o viewer receber eventos nativos de teclado
+      if (!passthroughRef.current) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("keyboard-capture-stop");
+      }
+    }
   }, []);
 
+  // ── Ghost input ──────────────────────────────────────────────────────
+
+  const { ghostRef, focus, handleKeyDown, handleInput, handlePaste } = useGhostInput({
+    disabled: sessionDone,
+    paused: passthrough,
+    onChar: (c) => {
+      if (onboard >= 0) { skipOnboard(); return; }
+      const before = useCardStore.getState();
+      store.appendChar(c, CARD_W_STORE);
+      if (useCardStore.getState().allLines.length > before.allLines.length) {
+        triggerRoll(() => {}, before.noteText.trim());
+      }
+    },
+    onPaste: (text) => {
+      if (onboard >= 0) { skipOnboard(); return; }
+      const before = useCardStore.getState();
+      store.pasteText(text, CARD_W_STORE);
+      if (useCardStore.getState().allLines.length > before.allLines.length) {
+        triggerRoll(() => {}, "");
+      }
+    },
+    onBackspace: () => {
+      if (onboard >= 0) { skipOnboard(); return; }
+      store.backspace(CARD_W_STORE);
+    },
+    onEnter: () => {
+      if (onboard >= 0) { skipOnboard(); return; }
+      const text = mode === "title" ? titleText : activeNote;
+      if (mode === "title") triggerRoll(() => store.commitTitle(), text);
+      else triggerRoll(() => store.advanceNote(CARD_W_STORE), text);
+    },
+    onCtrlEnter: () => {
+      if (onboard >= 0) { skipOnboard(); return; }
+      if (mode === "note") handleFinish();
+    },
+    onCtrlZ: () => { if (onboard < 0) store.undo(CARD_W_STORE); },
+  });
+
+  // ── Onboarding auto-advance ──────────────────────────────────────────
+
+  useEffect(() => {
+    if (onboard < 0) return;
+    const timer = setTimeout(() => {
+      const step = onboard;
+      const next = step + 1;
+      if (next >= ONBOARD_STEPS.length) {
+        triggerRoll(() => {}, ONBOARD_STEPS[step]);
+        setTimeout(() => setOnboard(-1), 260);
+        localStorage.setItem("tf-seen", "1");
+      } else {
+        triggerRoll(() => {}, ONBOARD_STEPS[step]);
+        setTimeout(() => setOnboard(next), 260);
+      }
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, [onboard, triggerRoll]);
+
+  // ── Effects ──────────────────────────────────────────────────────────
+
+  // Inicia captura de teclado ao montar — CAPTURE_ACTIVE começa como false no Rust
+  useEffect(() => {
+    import("@tauri-apps/api/event").then(({ emit }) => emit("keyboard-capture-start"));
+  }, []);
+
+  useEffect(() => {
+    const fns: (() => void)[] = [];
+    listen("toggle-click-through", () => togglePassthrough()).then((fn) => fns.push(fn));
+    listen("toggle-sound", () => toggleSound()).then((fn) => fns.push(fn));
+    listen("toggle-viewer", () => handleOpenViewer()).then((fn) => fns.push(fn));
+    listen("viewer-closed", async () => {
+      viewerOpenRef.current = false;
+      setViewerOpen(false);
+      // Retoma captura quando viewer fecha
+      const { emit } = await import("@tauri-apps/api/event");
+      if (!passthroughRef.current) await emit("keyboard-capture-start");
+    }).then((fn) => fns.push(fn));
+    return () => fns.forEach((fn) => fn());
+  }, [togglePassthrough, toggleSound, handleOpenViewer]);
+
+  useEffect(() => {
+    const handler = () => invoke("reassert_noactivate").catch(() => {});
+    window.addEventListener("mousedown", handler, true);
+    return () => window.removeEventListener("mousedown", handler, true);
+  }, []);
+
+  useEffect(() => {
+    if (!viewerOpen) return;
+    let unlisten: (() => void) | null = null;
+    getCurrentWindow().onMoved(() => invoke("sync_viewer_to_card").catch(() => {}))
+      .then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [viewerOpen]);
+
+  // ── Render ───────────────────────────────────────────────────────────
+
+  const isOnboarding = onboard >= 0;
+  const displayText = isOnboarding ? ONBOARD_STEPS[onboard] : storeText;
+  const textToShow = rollPhase === "out" ? outText : displayText;
+  const showCursor = rollPhase === "idle" && !passthrough && !sessionDone;
+
+  const animClass =
+    rollPhase === "out" ? "animate-rollBack" :
+    rollPhase === "in"  ? "animate-rollIn"   : undefined;
+
+  const pillBorder = passthrough
+    ? "rgba(250,204,21,0.1)"
+    : viewerOpen
+    ? "rgba(125,211,252,0.10)"
+    : "rgba(255,255,255,0.07)";
+  const pillShadow = passthrough || viewerOpen
+    ? "none"
+    : "0 4px 18px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)";
+
   return (
-    <div
-      className="flex flex-col w-[900px]"
-      style={{
-        opacity: passthrough ? 0.18 : 1,
-        transition: "opacity 0.2s ease",
-      }}
-    >
-      {/* Ghost textarea invisível */}
+    <div className="flex items-center justify-center w-full h-full group/pill" style={{ position: "relative" }}>
       <textarea
         ref={ghostRef}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
         onPaste={handlePaste}
         aria-hidden="true"
-        style={{
-          position: "fixed",
-          opacity: 0,
-          pointerEvents: "none",
-          width: 1,
-          height: 1,
-          top: 0,
-          left: 0,
-          zIndex: -1,
-        }}
+        style={{ position: "fixed", opacity: 0, pointerEvents: "none", width: 1, height: 1, top: 0, left: 0, zIndex: -1 }}
       />
 
-      {/* Top bar */}
+      {/* ── Pill ────────────────────────────────────────────────────── */}
       <div
-        className="h-5 flex-shrink-0 flex items-center justify-end px-2.5"
-        data-tauri-drag-region
-      >
-        <div
-          className="flex gap-1.5 items-center"
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{ pointerEvents: passthrough ? "none" : "auto" }}
-        >
-          <button
-            onClick={handleOpenViewer}
-            className="font-mono text-[7.5px] tracking-wider uppercase px-1.5 py-px rounded border border-white/10 text-white/20 hover:text-accent hover:border-accent/40 transition-all"
-          >
-            sessions
-          </button>
-          <button
-            onClick={toggleSound}
-            className={`font-mono text-[7.5px] tracking-wider uppercase px-1.5 py-px rounded border transition-all ${
-              soundOn
-                ? "text-violet-400 border-violet-400/45 bg-violet-400/10"
-                : "text-white/20 border-white/10 hover:text-violet-400 hover:border-violet-400/35"
-            }`}
-          >
-            {soundOn ? "sound on" : "sound off"}
-          </button>
-          <button
-            onClick={togglePassthrough}
-            className={`font-mono text-[7.5px] tracking-wider uppercase px-1.5 py-px rounded border transition-all ${
-              passthrough
-                ? "text-yellow-400 border-yellow-400/45 bg-yellow-400/10"
-                : "text-white/20 border-white/10 hover:text-yellow-400 hover:border-yellow-400/35"
-            }`}
-          >
-            {passthrough ? "passthrough on" : "passthrough off"}
-          </button>
-          <button
-            onClick={() => getCurrentWindow().hide()}
-            className="font-mono text-sm leading-none text-white/20 hover:text-red-400 transition-colors px-1"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-
-      {/* Card body */}
-      <div
-        ref={cardRef}
-        className="relative bg-[rgba(10,10,14,0.92)] rounded-xl backdrop-blur-lg px-4 py-2.5 flex flex-col gap-1 overflow-visible"
-        style={{
-          border: passthrough
-            ? "1px solid rgba(250,204,21,0.5)"
-            : "1px solid rgba(255,255,255,0.07)",
-          transition: "border-color 0.2s ease",
-          pointerEvents: passthrough ? "none" : "auto",
-        }}
         data-tauri-drag-region
         onMouseDown={(e) => {
-          const target = e.target as HTMLElement;
-          if (target.closest("button")) return;
-          // Previne ativação da janela — ghost input já recebe via hook Rust
           e.preventDefault();
-          focus();
+          if (viewerOpen) handleOpenViewer();
+          else focus();
+        }}
+        style={{
+          width: PILL_W,
+          height: PILL_H,
+          borderRadius: 9999,
+          background: passthrough
+            ? "rgba(13,13,19,0)"
+            : viewerOpen
+            ? "rgba(13,13,19,0.60)"
+            : "rgba(13,13,19,0.96)",
+          border: `1px solid ${pillBorder}`,
+          boxShadow: pillShadow,
+          overflow: "hidden",
+          position: "relative",
+          opacity: passthrough ? 0 : 1,
+          transition: "opacity 0.25s ease, border-color 0.3s ease, background 0.3s ease",
+          cursor: viewerOpen ? "pointer" : "default",
         }}
       >
-        <div className="absolute left-1.5 top-1/2 -translate-y-1/2 grid grid-cols-1 gap-[3px] pointer-events-none">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <span key={i} className="w-[3px] h-[3px] rounded-full bg-white/25" />
-          ))}
-        </div>
-
-        <div className={mode === "note" ? "text-white/50" : "text-accent"} data-tauri-drag-region>
-          <CardLine
-            tag={mode === "note" ? ghostTag : "title"}
-            text={mode === "note" ? ghostLine : titleText}
-            placeholder={mode === "title" ? "Session title…" : undefined}
-            showCursor={mode === "title" && !passthrough}
-          />
-        </div>
-
-        {mode === "note" && (
-          <div className="text-slate-200" data-tauri-drag-region>
-            <CardLine
-              tag={`~${store.lineCounter + 1}`}
-              text={activeNote}
-              placeholder={PLACEHOLDERS[phIdx]}
-              showCursor={!passthrough}
-            />
-          </div>
-        )}
-
-        {flashVisible && (
-          <span className="absolute bottom-1.5 right-3 font-mono text-[8px] text-accent/55 tracking-widest uppercase pointer-events-none">
-            saved
-          </span>
-        )}
-
-        {sessionDone && (
-          <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-[rgba(10,10,14,0.93)] z-10">
-            <span className="font-mono text-[10px] tracking-[0.15em] uppercase text-accent/80">
-              session saved ›
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: viewerOpen ? "center" : undefined,
+            paddingLeft: viewerOpen ? 0 : 20,
+            paddingRight: viewerOpen ? 0 : 20,
+            overflow: "hidden",
+          }}
+        >
+          {viewerOpen ? (
+            <span
+              className="animate-fadeIn"
+              style={{ color: "rgba(125,211,252,0.8)", display: "flex" }}
+            >
+              <EyeClosed size={20} strokeWidth={2} />
             </span>
-          </div>
-        )}
+          ) : sessionDone ? (
+            <span className="animate-fadeIn w-full flex justify-center" style={{ color: "#7dd3fc", opacity: 0.8 }}>
+              <CircleCheck size={16} strokeWidth={1.5} />
+            </span>
+          ) : (
+            <div
+              key={phaseKey}
+              className={animClass}
+              style={{ width: "100%", position: "relative" }}
+            >
+              <span
+                className="font-mono text-[15px] tracking-[0.01em] whitespace-nowrap"
+                style={{ color: isOnboarding ? "#7dd3fc" : "rgba(255,255,255,0.82)" }}
+              >
+                {textToShow}
+                {showCursor && (
+                  <span
+                    className="inline-block w-[2px] h-[0.88em] align-text-bottom ml-[1px] rounded-[1px] animate-blink"
+                    style={{ background: "#7dd3fc", marginBottom: "1px" }}
+                  />
+                )}
+              </span>
+
+              {/* Placeholder — only in normal mode when empty */}
+              {!textToShow && !isOnboarding && rollPhase === "idle" && (
+                <span
+                  className="font-mono text-[15px] pointer-events-none absolute inset-0 flex items-center"
+                  style={{ color: "rgba(255,255,255,0.16)" }}
+                >
+                  {mode === "title" ? "title session…" : "keep going…"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ? help button — visible on hover, hidden during onboarding/passthrough/viewer */}
+      {!isOnboarding && !sessionDone && !passthrough && !viewerOpen && (
+        <button
+          className="absolute opacity-0 group-hover/pill:opacity-100 transition-opacity"
+          style={{
+            right: 10,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "rgba(255,255,255,0.18)",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.55)")}
+          onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.18)")}
+          onClick={() => setOnboard(0)}
+        >
+          <CircleHelp size={12} strokeWidth={1.5} />
+        </button>
+      )}
     </div>
   );
 }

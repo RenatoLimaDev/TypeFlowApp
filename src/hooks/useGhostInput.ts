@@ -10,6 +10,7 @@ interface KeyEvent {
 
 interface UseGhostInputOptions {
   onChar: (char: string) => void;
+  onPaste?: (text: string) => void;
   onBackspace: () => void;
   onEnter: () => void;
   onCtrlEnter: () => void;
@@ -129,8 +130,11 @@ export function useGhostInput(opts: UseGhostInputOptions) {
       const val = target.value;
       target.value = "";
       const printable = [...val].filter((c) => c >= " ").join("");
-      if (printable) {
-        initAudio();
+      if (!printable) return;
+      initAudio();
+      if (printable.length > 1 && optsRef.current.onPaste) {
+        optsRef.current.onPaste(printable);
+      } else {
         optsRef.current.onChar(printable);
       }
     }, []
@@ -140,10 +144,16 @@ export function useGhostInput(opts: UseGhostInputOptions) {
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
       if (optsRef.current.disabled || optsRef.current.paused) return;
-      const raw = e.clipboardData.getData("text");
+      const raw = e.clipboardData.getData("text/plain") || e.clipboardData.getData("text");
       if (!raw) return;
       const printable = [...raw].filter((c) => c >= " ").join("");
-      if (printable) optsRef.current.onChar(printable);
+      if (!printable) return;
+      initAudio();
+      if (optsRef.current.onPaste) {
+        optsRef.current.onPaste(printable);
+      } else {
+        optsRef.current.onChar(printable);
+      }
     }, []
   );
 
