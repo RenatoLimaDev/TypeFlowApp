@@ -1,15 +1,30 @@
+<div align="center">
+
 # TypeFlow
 
-Overlay de notas flutuante para desktop. Construído com **Tauri v2 + React + TypeScript + Vite**.
+**Overlay de notas flutuante para desktop**
 
+![Tauri](https://img.shields.io/badge/Tauri_v2-24C8D8?style=flat&logo=tauri&logoColor=white)
+![React](https://img.shields.io/badge/React_18-61DAFB?style=flat&logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-CE422B?style=flat&logo=rust&logoColor=white)
+
+</div>
+
+---
+
+
+TypeFlow é um overlay minimalista que fica sobre todas as janelas, permitindo capturar pensamentos e notas sem interromper o fluxo de trabalho. Bundle < 5MB.
 ## Stack
 
-- **Tauri v2** — runtime nativo, bundle < 5MB
-- **React 18** + **TypeScript** — UI
-- **Vite** — build tool
-- **Tailwind CSS v3** — styling
-- **Zustand** + **Immer** — estado global
-- **Rust** — janelas, shortcuts globais, tray
+| Camada | Tecnologia |
+|---|---|
+| Runtime nativo | Tauri v2 |
+| UI | React 18 + TypeScript |
+| Build | Vite |
+| Styling | Tailwind CSS v3 |
+| Estado | Zustand + Immer |
+| Backend | Rust |
 
 ## Estrutura
 
@@ -29,19 +44,16 @@ typeflow/
 │       ├── card/
 │       ├── viewer/
 │       └── onboarding/
-├── src-tauri/
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── windows.rs     # Criação das 3 janelas
-│   │   ├── tray.rs        # System tray
-│   │   └── shortcuts.rs   # Atalhos globais
-│   ├── icons/
-│   ├── capabilities/
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── vite.config.ts
-├── tailwind.config.ts
-└── package.json
+└── src-tauri/
+    ├── src/
+    │   ├── main.rs
+    │   ├── windows.rs     # Criação das 3 janelas
+    │   ├── tray.rs        # System tray
+    │   ├── shortcuts.rs   # Atalhos globais
+    │   └── keyboard.rs    # Captura global de teclado
+    ├── capabilities/
+    ├── Cargo.toml
+    └── tauri.conf.json
 ```
 
 ## Desenvolvimento
@@ -51,18 +63,17 @@ npm install
 npm run tauri:dev
 ```
 
-## Build portátil
+## Build
 
 ```bash
 npm run tauri:build
 ```
 
-Gera `src-tauri/target/release/bundle/` com o executável.
-
+Gera o executável em `src-tauri/target/release/bundle/`.
 ## Atalhos
 
 | Atalho | Ação |
-|--------|------|
+|---|---|
 | `Ctrl + Alt + V` | Abrir / fechar sessions |
 | `Ctrl + Alt + S` | Som on / off |
 | `Ctrl + Alt + C` | Click-through |
